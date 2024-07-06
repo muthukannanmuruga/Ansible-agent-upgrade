@@ -1,0 +1,77 @@
+---
+- name: Install or Update AWS CLI
+  hosts: all
+  become: yes
+  vars:
+    awscli_version: "2.15.4"  # Specify the AWS CLI version you want to install/update
+
+  tasks:
+    - name: Gather EC2 instance metadata
+      amazon.aws.ec2_metadata_facts:
+
+    - name: Debug EC2 metadata
+      debug:
+        var: ansible_facts
+
+    - name: Ensure the directory for storing data exists
+      file:
+        path: /path/to/ansibledata
+        state: directory
+        mode: '0755'
+
+    - name: Store EC2 metadata in a file
+      copy:
+        content: "{{ ansible_facts | to_nice_yaml }}"
+        dest: /path/to/ansibledata/ec2_metadata.yaml
+      become: yes
+
+
+    - name: Get EC2 instance ID
+      set_fact:
+        instance_id: "{{ ansible_facts.ec2_instance_id }}"
+
+
+    - name: Record AWS CLI version before installation/update
+      command: "aws --version"
+      register: awscli_version_before
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Ensure unzip is installed
+      package:
+        name: unzip
+        state: present
+
+    - name: Install python3-pexpect package
+      yum:
+        name: python3-pexpect
+        state: present
+        update_cache: yes
+      become: yes
+
+    - name: Download AWS CLI package
+      command: "curl -o /tmp/awscliv2.zip https://awscli.amazonaws.com/awscli-exe-linux-x86_64-{{ awscli_version }}.zip"
+
+    - name: Unzip AWS CLI package
+      expect:
+        command: "unzip -o /tmp/awscliv2.zip -d /tmp/awscli"
+        responses:
+          'replace aws/README.md? [y]es, [n]o, [A]ll, [N]one, [r]ename': 'A'
+
+    - name: Install or Update AWS CLI
+      command: "sudo /tmp/awscli/aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update"
+    
+    - name: Record AWS CLI version after installation/update
+      command: "aws --version"
+      register: awscli_version_after
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Store version information in a text file
+      copy:
+        content: |
+          Instance ID: {{ instance_id }}
+          AWS CLI Version Before: {{ awscli_version_before.stdout | default('Not Installed') }}
+          AWS CLI Version After: {{ awscli_version_after.stdout | default('Not Installed') }}
+        dest: /path/to/ansibledata/version_info.txt
+      become: yes
